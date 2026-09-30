@@ -81,7 +81,8 @@ pub struct Browser {
 
 impl Browser {
     pub fn launch(exe: &Path, url: &str) -> Result<Self> {
-        let profile = std::env::temp_dir().join(format!("modulargrid-login-{}", std::process::id()));
+        let profile =
+            std::env::temp_dir().join(format!("modulargrid-login-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&profile);
         std::fs::create_dir_all(&profile)?;
 
@@ -100,7 +101,12 @@ impl Browser {
             // is already running) and `-W` keeps `open` alive until that instance quits.
             Some(bundle) => {
                 let mut c = Command::new("/usr/bin/open");
-                c.arg("-n").arg("-W").arg("-a").arg(bundle).arg("--args").args(&args);
+                c.arg("-n")
+                    .arg("-W")
+                    .arg("-a")
+                    .arg(bundle)
+                    .arg("--args")
+                    .args(&args);
                 c
             }
             None => {
@@ -121,11 +127,14 @@ impl Browser {
         let deadline = Instant::now() + Duration::from_secs(20);
         let contents = loop {
             if let Ok(s) = std::fs::read_to_string(&port_file)
-                && s.lines().count() >= 2 {
-                    break s;
-                }
+                && s.lines().count() >= 2
+            {
+                break s;
+            }
             if Instant::now() > deadline {
-                bail!("browser did not expose a DevTools port (is another instance hijacking the launch?)");
+                bail!(
+                    "browser did not expose a DevTools port (is another instance hijacking the launch?)"
+                );
             }
             std::thread::sleep(Duration::from_millis(200));
         };
@@ -135,7 +144,12 @@ impl Browser {
         let ws_url = format!("ws://127.0.0.1:{port}{path}");
         let (ws, _) = tungstenite::connect(&ws_url).context("connecting to DevTools websocket")?;
 
-        Ok(Self { child, ws, next_id: 1, profile })
+        Ok(Self {
+            child,
+            ws,
+            next_id: 1,
+            profile,
+        })
     }
 
     fn call(&mut self, method: &str, params: Value) -> Result<Value> {

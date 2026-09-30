@@ -157,7 +157,9 @@ enum Sort {
 impl SearchArgs {
     fn filters(&self, client: &Client) -> Result<client::SearchFilters> {
         let pick = |v: &Option<String>, list: &str, what: &str| -> Result<Option<u64>> {
-            v.as_deref().map(|s| client.resolve_choice(list, what, s)).transpose()
+            v.as_deref()
+                .map(|s| client.resolve_choice(list, what, s))
+                .transpose()
         };
         Ok(client::SearchFilters {
             name: self.query.join(" "),
@@ -377,13 +379,24 @@ fn run(cli: Cli) -> Result<()> {
             }
             let existed = Session::delete()?;
             if !json {
-                println!("{}", if existed { "Logged out." } else { "Not logged in." });
+                println!(
+                    "{}",
+                    if existed {
+                        "Logged out."
+                    } else {
+                        "Not logged in."
+                    }
+                );
             } else {
                 print_json(&serde_json::json!({"logged_out": existed}))?;
             }
         }
         Cmd::Whoami => {
-            let me = if session.is_some() { client.whoami()? } else { None };
+            let me = if session.is_some() {
+                client.whoami()?
+            } else {
+                None
+            };
             match (me, json) {
                 (Some(me), true) => print_json(&me)?,
                 (Some(me), false) => match &me.user_id {
@@ -431,7 +444,10 @@ fn persist(client: &Client, session: Option<Session>) -> Result<()> {
 fn login(args: LoginArgs, format: &str, json: bool) -> Result<()> {
     if let Some(value) = args.cookie {
         let session = Session {
-            cookies: vec![Cookie { name: "CAKEPHP".into(), value }],
+            cookies: vec![Cookie {
+                name: "CAKEPHP".into(),
+                value,
+            }],
             ..Default::default()
         };
         return finish_login(session, format, json);
@@ -439,7 +455,10 @@ fn login(args: LoginArgs, format: &str, json: bool) -> Result<()> {
 
     let exe = browser::find_browser(args.browser.as_deref())?;
     let login_url = format!("{}/{format}/users/login", client::ORIGIN);
-    eprintln!("Opening {} — log in there; this window closes automatically.", exe.display());
+    eprintln!(
+        "Opening {} — log in there; this window closes automatically.",
+        exe.display()
+    );
     eprintln!("(Tick \"Remember me\" to stay logged in longer.)");
     let mut b = browser::Browser::launch(&exe, &login_url)?;
 
@@ -463,16 +482,25 @@ fn login(args: LoginArgs, format: &str, json: bool) -> Result<()> {
         };
         debug(format_args!(
             "cookies: {}",
-            cookies.iter().map(|c| c.name.as_str()).collect::<Vec<_>>().join(", ")
+            cookies
+                .iter()
+                .map(|c| c.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
         // Check immediately when the session cookie changes (it's usually regenerated on login),
         // and otherwise every few seconds in case it isn't.
-        let Some(sess) = cookies.iter().find(|c| c.name == "CAKEPHP") else { continue };
+        let Some(sess) = cookies.iter().find(|c| c.name == "CAKEPHP") else {
+            continue;
+        };
         polls += 1;
         if sess.value == last_session_value && !polls.is_multiple_of(3) {
             continue;
         }
-        let candidate = Session { cookies: cookies.clone(), ..Default::default() };
+        let candidate = Session {
+            cookies: cookies.clone(),
+            ..Default::default()
+        };
         let c = Client::new(Some(&candidate), format)?;
         match c.whoami() {
             Ok(Some(_)) => break Ok(candidate),
@@ -523,7 +551,11 @@ fn collection(client: &Client, cmd: CollectionCmd, json: bool) -> Result<()> {
             }
         }
         CollectionCmd::Add { modules } => for_each_module(client, &modules, json, |id| {
-            Ok(if client.collection_add(id)? { "added to collection" } else { "already in collection" })
+            Ok(if client.collection_add(id)? {
+                "added to collection"
+            } else {
+                "already in collection"
+            })
         })?,
         CollectionCmd::Remove { modules } => for_each_module(client, &modules, json, |id| {
             client.collection_remove(id)?;
@@ -535,7 +567,12 @@ fn collection(client: &Client, cmd: CollectionCmd, json: bool) -> Result<()> {
                 println!("Collection is already empty.");
                 return Ok(());
             }
-            if !yes && !confirm(&format!("Remove all {} modules from your collection?", mods.len()))? {
+            if !yes
+                && !confirm(&format!(
+                    "Remove all {} modules from your collection?",
+                    mods.len()
+                ))?
+            {
                 bail!("aborted");
             }
             // The collection listing is a paginated search, so re-list after each pass
@@ -553,12 +590,24 @@ fn collection(client: &Client, cmd: CollectionCmd, json: bool) -> Result<()> {
                         Ok(()) => {
                             removed += 1;
                             if !json {
-                                eprintln!("[{}/{}] removed {} {}", i + 1, todo.len(), m.vendor, m.name);
+                                eprintln!(
+                                    "[{}/{}] removed {} {}",
+                                    i + 1,
+                                    todo.len(),
+                                    m.vendor,
+                                    m.name
+                                );
                             }
                         }
                         Err(e) => {
                             failed.insert(m.id);
-                            eprintln!("[{}/{}] failed to remove {} ({}): {e:#}", i + 1, todo.len(), m.name, m.id);
+                            eprintln!(
+                                "[{}/{}] failed to remove {} ({}): {e:#}",
+                                i + 1,
+                                todo.len(),
+                                m.name,
+                                m.id
+                            );
                         }
                     }
                 }
@@ -607,7 +656,10 @@ fn rack(client: &Client, cmd: RackCmd, format: &str, json: bool) -> Result<()> {
                 let mut mods: Vec<_> = r.modules.iter().collect();
                 mods.sort_by_key(|m| (m.row, m.col));
                 if !mods.is_empty() {
-                    println!("{:>10}  {:>7}  {:>3}  {:>4}  {:>4}  MODULE", "INSTANCE", "MODULE", "ROW", "COL", "HP");
+                    println!(
+                        "{:>10}  {:>7}  {:>3}  {:>4}  {:>4}  MODULE",
+                        "INSTANCE", "MODULE", "ROW", "COL", "HP"
+                    );
                 }
                 for m in mods {
                     println!(
@@ -617,7 +669,15 @@ fn rack(client: &Client, cmd: RackCmd, format: &str, json: bool) -> Result<()> {
                 }
             }
         }
-        RackCmd::Create { name, hp, rows, rows_1u, private, url, theme } => {
+        RackCmd::Create {
+            name,
+            hp,
+            rows,
+            rows_1u,
+            private,
+            url,
+            theme,
+        } => {
             let id = client.create_rack(&NewRack {
                 name: &name,
                 hp,
@@ -631,13 +691,19 @@ fn rack(client: &Client, cmd: RackCmd, format: &str, json: bool) -> Result<()> {
             if json {
                 print_json(&serde_json::json!({"id": id, "name": name}))?;
             } else {
-                println!("Created rack {id}: {}/{format}/racks/view/{id}", client::ORIGIN);
+                println!(
+                    "Created rack {id}: {}/{format}/racks/view/{id}",
+                    client::ORIGIN
+                );
             }
         }
         RackCmd::Delete { rack, yes } => {
             let id = client.resolve_rack(&rack)?;
             if !yes {
-                let name = client.rack(id).map(|r| r.name).unwrap_or_else(|_| id.to_string());
+                let name = client
+                    .rack(id)
+                    .map(|r| r.name)
+                    .unwrap_or_else(|_| id.to_string());
                 if !confirm(&format!("Delete rack '{name}' ({id})?"))? {
                     bail!("aborted");
                 }
@@ -670,7 +736,11 @@ fn rack(client: &Client, cmd: RackCmd, format: &str, json: bool) -> Result<()> {
                     if let Err(e) = placed {
                         // Don't leave it somewhere the user didn't ask for.
                         let _ = client.rack_remove_instance(added.instance_id);
-                        bail!("could not place {} {} ({mid}) at row {r}, col {c}: {e:#}", added.vendor, added.name);
+                        bail!(
+                            "could not place {} {} ({mid}) at row {r}, col {c}: {e:#}",
+                            added.vendor,
+                            added.name
+                        );
                     }
                     (added.row, added.col) = (r, c);
                 }
@@ -694,7 +764,12 @@ fn rack(client: &Client, cmd: RackCmd, format: &str, json: bool) -> Result<()> {
             let totals = client.rack_totals(r.id)?;
             view_rack(&r, &totals, json)?;
         }
-        RackCmd::Move { rack, instance, row, col } => {
+        RackCmd::Move {
+            rack,
+            instance,
+            row,
+            col,
+        } => {
             let rack_id = client.resolve_rack(&rack)?;
             let layout = client.rack(rack_id)?;
             let Some(m) = layout.modules.iter().find(|m| m.instance_id == instance) else {
@@ -708,7 +783,12 @@ fn rack(client: &Client, cmd: RackCmd, format: &str, json: bool) -> Result<()> {
                 println!("Moved instance {instance} in rack {rack_id} to row {row}, col {col}.");
             }
         }
-        RackCmd::Remove { rack, modules, all, instances } => {
+        RackCmd::Remove {
+            rack,
+            modules,
+            all,
+            instances,
+        } => {
             if modules.is_empty() && instances.is_empty() {
                 bail!("give module ids/slugs or --instance ids to remove");
             }
@@ -720,8 +800,11 @@ fn rack(client: &Client, cmd: RackCmd, format: &str, json: bool) -> Result<()> {
                 for m in &modules {
                     let mid = client.resolve_module(m)?;
                     // Prefer removing the right-/bottom-most instance first.
-                    let mut cands: Vec<_> =
-                        r.modules.iter().filter(|x| x.module_id == mid && !used.contains(&x.instance_id)).collect();
+                    let mut cands: Vec<_> = r
+                        .modules
+                        .iter()
+                        .filter(|x| x.module_id == mid && !used.contains(&x.instance_id))
+                        .collect();
                     cands.sort_by_key(|x| std::cmp::Reverse((x.row, x.col)));
                     if cands.is_empty() {
                         bail!("module {m} is not in rack {rack_id}");
@@ -756,7 +839,9 @@ fn for_each_module(
     let mut ok = vec![];
     let mut failed = 0;
     for r in refs {
-        let res = client.resolve_module(r).and_then(|id| f(id).map(|verb| (id, verb)));
+        let res = client
+            .resolve_module(r)
+            .and_then(|id| f(id).map(|verb| (id, verb)));
         match res {
             Ok((id, verb)) => {
                 if !json {
@@ -806,19 +891,32 @@ fn is_blank(m: &client::RackModule) -> bool {
 }
 
 fn row_slots(r: &client::Rack, row: u32) -> Vec<Slot<'_>> {
-    let mut mods: Vec<_> = r.modules.iter().filter(|m| m.in_bounds && m.row == row).collect();
+    let mut mods: Vec<_> = r
+        .modules
+        .iter()
+        .filter(|m| m.in_bounds && m.row == row)
+        .collect();
     mods.sort_by_key(|m| m.col);
     let mut slots = vec![];
     let mut next = 1; // first HP position not yet covered
     for m in mods {
         if m.col > next {
-            slots.push(Slot::Gap { col: next, hp: m.col - next });
+            slots.push(Slot::Gap {
+                col: next,
+                hp: m.col - next,
+            });
         }
-        slots.push(Slot::Module { module: m, blank: is_blank(m) });
+        slots.push(Slot::Module {
+            module: m,
+            blank: is_blank(m),
+        });
         next = next.max(m.col + m.width());
     }
     if next <= r.hp {
-        slots.push(Slot::Gap { col: next, hp: r.hp - next + 1 });
+        slots.push(Slot::Gap {
+            col: next,
+            hp: r.hp - next + 1,
+        });
     }
     slots
 }
@@ -854,9 +952,20 @@ fn view_rack(r: &client::Rack, t: &client::RackTotals, json: bool) -> Result<()>
                 }
             }
         }
-        let one_u = if r.rows_1u.contains(&row) { " (1U)" } else { "" };
-        let blank_note = if blanks > 0 { format!(", incl. {blanks} HP of blanks") } else { String::new() };
-        println!("\nRow {row}{one_u} — {filled}/{} HP filled{blank_note}", r.hp);
+        let one_u = if r.rows_1u.contains(&row) {
+            " (1U)"
+        } else {
+            ""
+        };
+        let blank_note = if blanks > 0 {
+            format!(", incl. {blanks} HP of blanks")
+        } else {
+            String::new()
+        };
+        println!(
+            "\nRow {row}{one_u} — {filled}/{} HP filled{blank_note}",
+            r.hp
+        );
         for s in &slots {
             match s {
                 Slot::Module { module: m, blank } => {
@@ -898,8 +1007,12 @@ fn view_rack(r: &client::Rack, t: &client::RackTotals, json: bool) -> Result<()>
 
 /// Split `MODULE@ROW:COL` into the module reference and optional position.
 fn parse_placement(s: &str) -> Result<(&str, Option<(u32, u32)>)> {
-    let Some((m, pos)) = s.rsplit_once('@') else { return Ok((s, None)) };
-    let parsed = pos.split_once(':').and_then(|(r, c)| Some((r.parse().ok()?, c.parse().ok()?)));
+    let Some((m, pos)) = s.rsplit_once('@') else {
+        return Ok((s, None));
+    };
+    let parsed = pos
+        .split_once(':')
+        .and_then(|(r, c)| Some((r.parse().ok()?, c.parse().ok()?)));
     match parsed {
         Some((r, c)) if r >= 1 && c >= 1 => Ok((m, Some((r, c)))),
         _ => bail!("bad position in '{s}': expected MODULE@ROW:COL with 1-based numbers"),
@@ -917,13 +1030,24 @@ fn print_choices(list: &[client::Choice], json: bool) -> Result<()> {
 }
 
 fn print_modules(mods: &[Module]) {
-    let w_name = mods.iter().map(|m| m.name.chars().count()).max().unwrap_or(4).clamp(4, 40);
-    let w_vendor = mods.iter().map(|m| m.vendor.chars().count()).max().unwrap_or(6).clamp(6, 28);
+    let w_name = mods
+        .iter()
+        .map(|m| m.name.chars().count())
+        .max()
+        .unwrap_or(4)
+        .clamp(4, 40);
+    let w_vendor = mods
+        .iter()
+        .map(|m| m.vendor.chars().count())
+        .max()
+        .unwrap_or(6)
+        .clamp(6, 28);
     for m in mods {
         println!(
             "{:>6}  {:>6}  {:<w_vendor$}  {:<w_name$}  {}",
             m.id,
-            m.hp.map(|hp| format!("{hp} HP")).unwrap_or_else(|| "-".into()),
+            m.hp.map(|hp| format!("{hp} HP"))
+                .unwrap_or_else(|| "-".into()),
             clip(&m.vendor, w_vendor),
             clip(&m.name, w_name),
             clip(&m.description, 60),
@@ -932,7 +1056,11 @@ fn print_modules(mods: &[Module]) {
 }
 
 fn clip(s: &str, n: usize) -> String {
-    if s.chars().count() <= n { s.to_string() } else { s.chars().take(n - 1).collect::<String>() + "…" }
+    if s.chars().count() <= n {
+        s.to_string()
+    } else {
+        s.chars().take(n - 1).collect::<String>() + "…"
+    }
 }
 
 fn confirm(prompt: &str) -> Result<bool> {

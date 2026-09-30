@@ -1,0 +1,276 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-features
+      - name: Smoke test against modulargrid.net
+        run: |
+          cargo run --release -- --version
+          cargo run --release -- search maths -s popular -n 3
+
+  check-release:
+    name: Check Release
+    runs-on: ubuntu-latest
+    needs: [fmt, clippy, test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check if release needed
+        id: check
+        run: |
+          VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "Tag v$VERSION already exists"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          else
+            echo "Tag v$VERSION does not exist, will release"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          fi
+
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: check-release
+    if: needs.check-release.outputs.should_release == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${{ needs.check-release.outputs.version }}" -m "Release v${{ needs.check-release.outputs.version }}"
+          git push origin "v${{ needs.check-release.outputs.version }}"
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ needs.check-release.outputs.version }}" \
+            --title "v${{ needs.check-release.outputs.version }}" \
+            --notes "Release v${{ needs.check-release.outputs.version }}" \
+            --draft
+
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    needs: [check-release, create-release]
+    if: needs.check-release.outputs.should_release == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.check-release.outputs.version }}
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: modulargrid
+          target: ${{ matrix.target }}
+          archive: modulargrid-v${{ needs.check-release.outputs.version }}-${{ matrix.target }}
+          ref: refs/tags/v${{ needs.check-release.outputs.version }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  release:
+    name: Update GitHub Release
+    runs-on: ubuntu-latest
+    needs: [check-release, build]
+    if: needs.check-release.outputs.should_release == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat > release_notes.md << 'EOF'
+          ## Installation
+
+          ```bash
+          # Via Homebrew (macOS/Linux)
+          brew install andreasjansson/tap/modulargrid
+          ```
+
+          `modulargrid login` needs a Chromium-based browser (Chrome, Chromium, Brave, Edge or Vivaldi).
+
+          ## Binaries
+
+          Pre-built binaries are available for Linux and macOS (x86_64 and ARM64).
+          EOF
+
+          gh release edit "v${{ needs.check-release.outputs.version }}" \
+            --notes-file release_notes.md \
+            --latest \
+            --draft=false
+
+  homebrew:
+    name: Update Homebrew
+    runs-on: ubuntu-latest
+    needs: [check-release, release]
+    if: needs.check-release.outputs.should_release == 'true'
+    steps:
+      - name: Download and hash binaries
+        id: hashes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.check-release.outputs.version }}"
+          BASE="https://github.com/andreasjansson/modulargrid-cli/releases/download/v${VERSION}"
+
+          for target in x86_64-apple-darwin aarch64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            FILE="modulargrid-v${VERSION}-${target}.tar.gz"
+            curl -sfL "${BASE}/${FILE}" -o "${FILE}"
+            SHA=$(sha256sum "${FILE}" | cut -d' ' -f1)
+            NAME=$(echo "$target" | tr '-' '_')
+            echo "${NAME}=${SHA}" >> $GITHUB_OUTPUT
+          done
+
+      - name: Update Homebrew formula
+        env:
+          # SSH deploy key with write access to andreasjansson/homebrew-tap only.
+          DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: |
+          VERSION="${{ needs.check-release.outputs.version }}"
+
+          cat > modulargrid.rb << EOF
+          class Modulargrid < Formula
+            desc "Command-line client for ModularGrid"
+            homepage "https://github.com/andreasjansson/modulargrid-cli"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_intel do
+                url "https://github.com/andreasjansson/modulargrid-cli/releases/download/v${VERSION}/modulargrid-v${VERSION}-x86_64-apple-darwin.tar.gz"
+                sha256 "${{ steps.hashes.outputs.x86_64_apple_darwin }}"
+              end
+              on_arm do
+                url "https://github.com/andreasjansson/modulargrid-cli/releases/download/v${VERSION}/modulargrid-v${VERSION}-aarch64-apple-darwin.tar.gz"
+                sha256 "${{ steps.hashes.outputs.aarch64_apple_darwin }}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "https://github.com/andreasjansson/modulargrid-cli/releases/download/v${VERSION}/modulargrid-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "${{ steps.hashes.outputs.x86_64_unknown_linux_gnu }}"
+              end
+              on_arm do
+                url "https://github.com/andreasjansson/modulargrid-cli/releases/download/v${VERSION}/modulargrid-v${VERSION}-aarch64-unknown-linux-gnu.tar.gz"
+                sha256 "${{ steps.hashes.outputs.aarch64_unknown_linux_gnu }}"
+              end
+            end
+
+            def install
+              bin.install "modulargrid"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/modulargrid --version")
+            end
+          end
+          EOF
+
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/homebrew_tap
+          chmod 600 ~/.ssh/homebrew_tap
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/homebrew_tap -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          git clone git@github.com:andreasjansson/homebrew-tap.git
+          cp modulargrid.rb homebrew-tap/Formula/modulargrid.rb
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/modulargrid.rb
+          git commit -m "Update modulargrid to ${VERSION}"
+          git push
+
+  smoke-test-macos:
+    name: Smoke Test (macOS/Homebrew)
+    runs-on: macos-latest
+    needs: [check-release, homebrew]
+    if: needs.check-release.outputs.should_release == 'true'
+    steps:
+      - name: Install modulargrid via Homebrew
+        run: brew install andreasjansson/tap/modulargrid
+      - name: Verify version
+        run: |
+          modulargrid --version
+          modulargrid --version | grep -q "${{ needs.check-release.outputs.version }}"
+      - name: Search modulargrid.net
+        run: modulargrid search maths -s popular -n 3
+
+  smoke-test-linux:
+    name: Smoke Test (Linux/GitHub Release)
+    runs-on: ubuntu-latest
+    needs: [check-release, homebrew]
+    if: needs.check-release.outputs.should_release == 'true'
+    steps:
+      - name: Install modulargrid from GitHub Release
+        run: |
+          curl -L "https://github.com/andreasjansson/modulargrid-cli/releases/download/v${{ needs.check-release.outputs.version }}/modulargrid-v${{ needs.check-release.outputs.version }}-x86_64-unknown-linux-gnu.tar.gz" | tar xz
+          sudo mv modulargrid /usr/local/bin/
+      - name: Verify version
+        run: |
+          modulargrid --version
+          modulargrid --version | grep -q "${{ needs.check-release.outputs.version }}"
+      - name: Search modulargrid.net
+        run: modulargrid search maths -s popular -n 3

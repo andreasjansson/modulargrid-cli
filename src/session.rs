@@ -35,9 +35,11 @@ impl Session {
     pub fn load() -> Result<Option<Session>> {
         let p = session_path()?;
         match std::fs::read_to_string(&p) {
-            Ok(s) => Ok(Some(
-                serde_json::from_str(&s).with_context(|| format!("corrupt session file {}", p.display()))?,
-            )),
+            Ok(s) => {
+                Ok(Some(serde_json::from_str(&s).with_context(|| {
+                    format!("corrupt session file {}", p.display())
+                })?))
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e.into()),
         }

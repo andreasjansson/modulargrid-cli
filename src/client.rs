@@ -141,13 +141,25 @@ impl Rack {
         }
         let row_is_1u = self.rows_1u.contains(&row);
         if module.is_1u != row_is_1u {
-            let (what, kind) = if module.is_1u { ("a 1U tile", "3U") } else { ("a 3U module", "1U") };
-            bail!("{} {} is {what}, but row {row} is a {kind} row", module.vendor, module.name);
+            let (what, kind) = if module.is_1u {
+                ("a 1U tile", "3U")
+            } else {
+                ("a 3U module", "1U")
+            };
+            bail!(
+                "{} {} is {what}, but row {row} is a {kind} row",
+                module.vendor,
+                module.name
+            );
         }
         let (width, ignore_instance) = (module.width(), Some(module.instance_id));
         let end = col + width - 1;
         if col < 1 || end > self.hp {
-            bail!("a {width} HP module at col {col} would span {}, outside the rack (HP 1-{})", hp_span(col, end), self.hp);
+            bail!(
+                "a {width} HP module at col {col} would span {}, outside the rack (HP 1-{})",
+                hp_span(col, end),
+                self.hp
+            );
         }
         if let Some(other) = self.modules.iter().find(|m| {
             Some(m.instance_id) != ignore_instance
@@ -191,7 +203,11 @@ fn sel(s: &str) -> Selector {
 }
 
 fn text(e: ElementRef) -> String {
-    e.text().collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ")
+    e.text()
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 impl Client {
@@ -200,25 +216,37 @@ impl Client {
         let origin: Url = ORIGIN.parse()?;
         if let Some(s) = session {
             for c in &s.cookies {
-                jar.add_cookie_str(&format!("{}={}; Domain=modulargrid.net; Path=/", c.name, c.value), &origin);
+                jar.add_cookie_str(
+                    &format!("{}={}; Domain=modulargrid.net; Path=/", c.name, c.value),
+                    &origin,
+                );
             }
         }
         let http = Http::builder()
             .user_agent(USER_AGENT)
             .cookie_provider(jar.clone())
             .build()?;
-        Ok(Self { http, jar, format: format.to_string() })
+        Ok(Self {
+            http,
+            jar,
+            format: format.to_string(),
+        })
     }
 
     /// Current cookies held by the client (the server may refresh them).
     pub fn cookies(&self) -> Vec<Cookie> {
         let origin: Url = ORIGIN.parse().unwrap();
-        let Some(h) = self.jar.cookies(&origin) else { return vec![] };
+        let Some(h) = self.jar.cookies(&origin) else {
+            return vec![];
+        };
         h.to_str()
             .unwrap_or_default()
             .split("; ")
             .filter_map(|kv| kv.split_once('='))
-            .map(|(k, v)| Cookie { name: k.to_string(), value: v.to_string() })
+            .map(|(k, v)| Cookie {
+                name: k.to_string(),
+                value: v.to_string(),
+            })
             .collect()
     }
 
@@ -227,7 +255,12 @@ impl Client {
     }
 
     fn get_html(&self, path: &str, query: &[(&str, String)]) -> Result<(Url, String)> {
-        let r = self.http.get(self.url(path)).query(query).send()?.error_for_status()?;
+        let r = self
+            .http
+            .get(self.url(path))
+            .query(query)
+            .send()?
+            .error_for_status()?;
         let final_url = r.url().clone();
         Ok((final_url, r.text()?))
     }
@@ -246,8 +279,12 @@ impl Client {
         }
         let r = r.error_for_status()?;
         let body = r.text()?;
-        let v: Value = serde_json::from_str(&body)
-            .with_context(|| format!("unexpected non-JSON response from {path}: {}", truncate(&body, 200)))?;
+        let v: Value = serde_json::from_str(&body).with_context(|| {
+            format!(
+                "unexpected non-JSON response from {path}: {}",
+                truncate(&body, 200)
+            )
+        })?;
         let resp = &v["response"];
         if resp["success"].as_bool() == Some(true) {
             Ok(resp["result"].clone())
@@ -283,7 +320,11 @@ impl Client {
             .select(&sel("title"))
             .next()
             .map(text)
-            .and_then(|t| t.strip_prefix("User ").and_then(|t| t.strip_suffix(" on ModularGrid")).map(str::to_string))
+            .and_then(|t| {
+                t.strip_prefix("User ")
+                    .and_then(|t| t.strip_suffix(" on ModularGrid"))
+                    .map(str::to_string)
+            })
             .or_else(|| doc.select(&sel("h1")).next().map(text))
             .context("could not determine username from profile page")?;
         let user_id = doc.select(&sel("a[href]")).find_map(|a| {
@@ -312,18 +353,38 @@ impl Client {
         let flag = |b: bool| if b { "1" } else { "0" }.to_string();
         let mut params: Vec<(&str, String)> = vec![
             ("SearchName", f.name.clone()),
-            ("SearchVendor", f.vendor.map(|v| v.to_string()).unwrap_or_default()),
-            ("SearchFunction", f.function.map(|v| v.to_string()).unwrap_or_default()),
-            ("SearchSecondaryfunction", f.secondary_function.map(|v| v.to_string()).unwrap_or_default()),
+            (
+                "SearchVendor",
+                f.vendor.map(|v| v.to_string()).unwrap_or_default(),
+            ),
+            (
+                "SearchFunction",
+                f.function.map(|v| v.to_string()).unwrap_or_default(),
+            ),
+            (
+                "SearchSecondaryfunction",
+                f.secondary_function
+                    .map(|v| v.to_string())
+                    .unwrap_or_default(),
+            ),
             ("SearchSecondaryfunctionexcl", flag(f.exclude_secondary)),
             ("SearchHeight", opt(&f.height)),
             ("SearchTe", f.hp.map(|v| v.to_string()).unwrap_or_default()),
-            ("SearchTemethod", if f.hp_exact { "exact" } else { "max" }.to_string()),
-            ("SearchMaxdepth", f.max_depth.map(|v| v.to_string()).unwrap_or_default()),
+            (
+                "SearchTemethod",
+                if f.hp_exact { "exact" } else { "max" }.to_string(),
+            ),
+            (
+                "SearchMaxdepth",
+                f.max_depth.map(|v| v.to_string()).unwrap_or_default(),
+            ),
             ("SearchBuildtype", opt(&f.build)),
             ("SearchLifecycle", opt(&f.lifecycle)),
             ("SearchSet", if f.mine { "my" } else { "all" }.to_string()),
-            ("SearchMarketplace", f.marketplace.map(|v| v.to_string()).unwrap_or_default()),
+            (
+                "SearchMarketplace",
+                f.marketplace.map(|v| v.to_string()).unwrap_or_default(),
+            ),
             ("SearchIsmodeled", flag(f.modeled)),
             ("SearchShowothers", flag(f.others || f.mine)),
             ("SearchOnlypassive", flag(f.passive)),
@@ -342,7 +403,11 @@ impl Client {
             }
             let doc = Html::parse_fragment(&html);
             if let Some(c) = doc.select(&sel("#search-count")).next() {
-                total = c.value().attr("data-search-count").and_then(|s| s.parse().ok()).unwrap_or(0);
+                total = c
+                    .value()
+                    .attr("data-search-count")
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
             }
             for m in doc.select(&sel(".box-module")).filter_map(parse_module_box) {
                 // Pages can overlap slightly; de-duplicate.
@@ -354,7 +419,11 @@ impl Client {
                 out.truncate(limit);
                 break;
             }
-            let Some(next) = doc.select(&sel("#lnk-next-results")).next().and_then(|a| a.value().attr("href")) else {
+            let Some(next) = doc
+                .select(&sel("#lnk-next-results"))
+                .next()
+                .and_then(|a| a.value().attr("href"))
+            else {
                 break;
             };
             // The next link already carries the full query string.
@@ -397,13 +466,20 @@ impl Client {
         if let Some(c) = all.iter().find(|c| c.name.to_lowercase() == lc) {
             return Ok(c.id);
         }
-        let hits: Vec<_> = all.iter().filter(|c| c.name.to_lowercase().contains(&lc)).collect();
+        let hits: Vec<_> = all
+            .iter()
+            .filter(|c| c.name.to_lowercase().contains(&lc))
+            .collect();
         match hits.as_slice() {
             [one] => Ok(one.id),
             [] => bail!("no {what} matching '{input}'"),
             many => bail!(
                 "'{input}' matches several {what}s: {}",
-                many.iter().take(12).map(|c| format!("{} ({})", c.name, c.id)).collect::<Vec<_>>().join(", ")
+                many.iter()
+                    .take(12)
+                    .map(|c| format!("{} ({})", c.name, c.id))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
         }
     }
@@ -424,17 +500,23 @@ impl Client {
         }
         let html = resp.text()?;
         let key = "data-module-id=\"";
-        let i = html.find(key).with_context(|| format!("no module found for '{r}'"))?;
+        let i = html
+            .find(key)
+            .with_context(|| format!("no module found for '{r}'"))?;
         let rest = &html[i + key.len()..];
         let id: String = rest.chars().take_while(char::is_ascii_digit).collect();
-        id.parse().with_context(|| format!("no module found for '{r}'"))
+        id.parse()
+            .with_context(|| format!("no module found for '{r}'"))
     }
 
     // ----- collection ----------------------------------------------------
 
     /// Returns false if the module was already in the collection.
     pub fn collection_add(&self, module_id: u64) -> Result<bool> {
-        match self.ajax("collections/add.json", &[("moduleId", module_id.to_string())]) {
+        match self.ajax(
+            "collections/add.json",
+            &[("moduleId", module_id.to_string())],
+        ) {
             Ok(_) => Ok(true),
             Err(e) if e.to_string().contains("already added") => Ok(false),
             Err(e) => Err(e),
@@ -442,12 +524,18 @@ impl Client {
     }
 
     pub fn collection_remove(&self, module_id: u64) -> Result<()> {
-        self.ajax("collections/remove.json", &[("moduleId", module_id.to_string())])?;
+        self.ajax(
+            "collections/remove.json",
+            &[("moduleId", module_id.to_string())],
+        )?;
         Ok(())
     }
 
     pub fn collection(&self) -> Result<Vec<Module>> {
-        let f = SearchFilters { mine: true, ..Default::default() };
+        let f = SearchFilters {
+            mine: true,
+            ..Default::default()
+        };
         Ok(self.search(&f, usize::MAX)?.1)
     }
 
@@ -459,8 +547,12 @@ impl Client {
         let doc = Html::parse_document(&html);
         let mut out = vec![];
         for item in doc.select(&sel(".li-screenshot")) {
-            let Some(a) = item.select(&sel("a.lnk-rack[data-rack-id]")).next() else { continue };
-            let Some(id) = a.value().attr("data-rack-id").and_then(|s| s.parse().ok()) else { continue };
+            let Some(a) = item.select(&sel("a.lnk-rack[data-rack-id]")).next() else {
+                continue;
+            };
+            let Some(id) = a.value().attr("data-rack-id").and_then(|s| s.parse().ok()) else {
+                continue;
+            };
             let name = item.select(&sel("h3")).next().map(text).unwrap_or_default();
             out.push(RackSummary { id, name });
         }
@@ -483,7 +575,10 @@ impl Client {
         match matches.as_slice() {
             [one] => Ok(one.id),
             [] => {
-                let ci: Vec<_> = racks.iter().filter(|x| x.name.eq_ignore_ascii_case(r)).collect();
+                let ci: Vec<_> = racks
+                    .iter()
+                    .filter(|x| x.name.eq_ignore_ascii_case(r))
+                    .collect();
                 match ci.as_slice() {
                     [one] => Ok(one.id),
                     [] => bail!("no rack named '{r}'"),
@@ -495,7 +590,10 @@ impl Client {
     }
 
     pub fn rack(&self, id: u64) -> Result<Rack> {
-        let r = self.http.get(self.url(&format!("racks/view/{id}"))).send()?;
+        let r = self
+            .http
+            .get(self.url(&format!("racks/view/{id}")))
+            .send()?;
         let not_found = r.status() == reqwest::StatusCode::NOT_FOUND;
         let r = if not_found { r } else { r.error_for_status()? };
         let u = r.url().clone();
@@ -526,7 +624,10 @@ impl Client {
                 .map(|a| a.iter().map(|x| num(x) as u32).collect())
                 .unwrap_or_default(),
             private: r["is_private"].as_bool().unwrap_or(false),
-            owner: rack["User"]["username"].as_str().unwrap_or_default().to_string(),
+            owner: rack["User"]["username"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
             modules,
         })
     }
@@ -535,7 +636,11 @@ impl Client {
     pub fn rack_totals(&self, id: u64) -> Result<RackTotals> {
         let r = self.ajax("racks/totals.json", &[("rackId", id.to_string())])?;
         let t = &r["totals"];
-        let s = |v: &Value| v.as_str().map(str::to_string).or_else(|| v.as_u64().map(|n| n.to_string()));
+        let s = |v: &Value| {
+            v.as_str()
+                .map(str::to_string)
+                .or_else(|| v.as_u64().map(|n| n.to_string()))
+        };
         Ok(RackTotals {
             current_plus_12v: num(&t["current_plus"]),
             current_minus_12v: num(&t["current_min"]),
@@ -546,7 +651,12 @@ impl Client {
             price_usd: s(&t["price_usd"]),
             // This comes as HTML (module links); keep just the text.
             incomplete: s(&t["incompletesText"])
-                .map(|x| Html::parse_fragment(&x).root_element().text().collect::<String>())
+                .map(|x| {
+                    Html::parse_fragment(&x)
+                        .root_element()
+                        .text()
+                        .collect::<String>()
+                })
                 .filter(|x| x != "none"),
         })
     }
@@ -567,18 +677,27 @@ impl Client {
         for r in nr.rows_1u {
             form.push(("data[Rack][rows1u][]".into(), r.to_string()));
         }
-        form.push(("data[Rack][is_private]".into(), if nr.private { "1" } else { "0" }.into()));
+        form.push((
+            "data[Rack][is_private]".into(),
+            if nr.private { "1" } else { "0" }.into(),
+        ));
         form.push(("data[Rack][url]".into(), nr.url.into()));
         form.push(("data[Rack][theme_id]".into(), theme));
 
-        let resp = self.http.post(self.url("racks/add")).form(&form).send()?.error_for_status()?;
+        let resp = self
+            .http
+            .post(self.url("racks/add"))
+            .form(&form)
+            .send()?
+            .error_for_status()?;
         let final_url = resp.url().clone();
         let html = resp.text()?;
         self.require_login(&html, &final_url)?;
         if let Some(rest) = final_url.path().split("/racks/view/").nth(1)
-            && let Ok(id) = rest.trim_end_matches('/').parse() {
-                return Ok(id);
-            }
+            && let Ok(id) = rest.trim_end_matches('/').parse()
+        {
+            return Ok(id);
+        }
         let errors: Vec<String> = Html::parse_document(&html)
             .select(&sel(".error-message, .invalid-feedback, .alert-danger"))
             .map(text)
@@ -634,7 +753,10 @@ impl Client {
     pub fn rack_add(&self, rack_id: u64, module_id: u64) -> Result<RackModule> {
         let r = self.ajax(
             "modules_racks/add.json",
-            &[("moduleId", module_id.to_string()), ("rackId", rack_id.to_string())],
+            &[
+                ("moduleId", module_id.to_string()),
+                ("rackId", rack_id.to_string()),
+            ],
         )?;
         Ok(parse_rack_module(&r["module"]))
     }
@@ -653,19 +775,28 @@ impl Client {
     }
 
     pub fn rack_remove_instance(&self, instance_id: u64) -> Result<()> {
-        self.ajax("modules_racks/delete.json", &[("modules_rack_id", instance_id.to_string())])?;
+        self.ajax(
+            "modules_racks/delete.json",
+            &[("modules_rack_id", instance_id.to_string())],
+        )?;
         Ok(())
     }
 }
 
 /// "HP 14" for a single HP, "HP 14-27" for a range.
 fn hp_span(start: u32, end: u32) -> String {
-    if start == end { format!("HP {start}") } else { format!("HP {start}-{end}") }
+    if start == end {
+        format!("HP {start}")
+    } else {
+        format!("HP {start}-{end}")
+    }
 }
 
 /// Numbers in the site's JSON come as either strings or numbers.
 fn num(v: &Value) -> u64 {
-    v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())).unwrap_or(0)
+    v.as_u64()
+        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        .unwrap_or(0)
 }
 
 fn parse_rack_module(m: &Value) -> RackModule {
@@ -680,7 +811,9 @@ fn parse_rack_module(m: &Value) -> RackModule {
         row: num(&mr["row"]) as u32,
         col: num(&mr["col"]) as u32,
         in_bounds: mr["is_inbounds"].as_bool().unwrap_or(true),
-        is_1u: m["is_1u"].as_bool().unwrap_or_else(|| num(&m["is_1u"]) == 1),
+        is_1u: m["is_1u"]
+            .as_bool()
+            .unwrap_or_else(|| num(&m["is_1u"]) == 1),
         current_plus_12v: num(&m["current_plus"]),
         current_minus_12v: num(&m["current_min"]),
         current_5v: num(&m["current5v"]),
@@ -690,18 +823,33 @@ fn parse_rack_module(m: &Value) -> RackModule {
 fn parse_module_box(b: ElementRef) -> Option<Module> {
     let id = b.value().attr("data-module-id")?.parse().ok()?;
     let link = b.select(&sel("h2.module-name a")).next()?;
-    let slug = link.value().attr("href").unwrap_or_default().rsplit('/').next().unwrap_or_default().to_string();
+    let slug = link
+        .value()
+        .attr("href")
+        .unwrap_or_default()
+        .rsplit('/')
+        .next()
+        .unwrap_or_default()
+        .to_string();
     Some(Module {
         id,
         name: text(link),
         slug,
-        vendor: b.select(&sel(".vendor-name a.lnk-vendor")).next().map(text).unwrap_or_default(),
+        vendor: b
+            .select(&sel(".vendor-name a.lnk-vendor"))
+            .next()
+            .map(text)
+            .unwrap_or_default(),
         // Rendered as e.g. "20 HP".
         hp: b
             .select(&sel(r#"span[title="Module Width"]"#))
             .next()
             .and_then(|e| text(e).split_whitespace().next()?.parse().ok()),
-        description: b.select(&sel(".caption p")).next().map(text).unwrap_or_default(),
+        description: b
+            .select(&sel(".caption p"))
+            .next()
+            .map(text)
+            .unwrap_or_default(),
         price: b.select(&sel(".price .currency")).next().map(text),
     })
 }
@@ -712,5 +860,9 @@ fn is_anonymous(html: &str) -> bool {
 }
 
 fn truncate(s: &str, n: usize) -> String {
-    if s.chars().count() <= n { s.to_string() } else { s.chars().take(n).collect::<String>() + "…" }
+    if s.chars().count() <= n {
+        s.to_string()
+    } else {
+        s.chars().take(n).collect::<String>() + "…"
+    }
 }
