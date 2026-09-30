@@ -193,7 +193,7 @@ jobs:
 
           cat > modulargrid.rb << EOF
           class Modulargrid < Formula
-            desc "Command-line client for ModularGrid"
+            desc "Unofficial command-line client for ModularGrid"
             homepage "https://github.com/andreasjansson/modulargrid-cli"
             version "${VERSION}"
             license "MIT"
