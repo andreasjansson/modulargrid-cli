@@ -1,6 +1,8 @@
 # `modulargrid` - ModularGrid from the command line
 
-modulargrid is a command-line client for [ModularGrid](https://modulargrid.net). Search the module database, manage your collection, and build racks without leaving the terminal.
+modulargrid is an unofficial CLI for [ModularGrid](https://modulargrid.net). It can search for modules, manage your collection, and build racks, directly in the terminal.
+
+I built the modulargrid CLI so my agents could manage my ModularGrid racks. Take a picture of your rack and give Claude access to modulargrid, and it will build the virtual rack for you!
 
 ```console
 $ modulargrid search maths -s popular -n 3
@@ -32,7 +34,7 @@ Depth: 25 mm | Modules: 3 | Price: €813 / $840
 
 ModularGrid doesn't have a public API, so modulargrid talks to the same internal endpoints the website's own JavaScript uses. Login goes through a real browser window (the login form is protected by reCAPTCHA), and modulargrid picks up the session from there.
 
-Every command takes `--json`, which makes modulargrid easy to script and easy for coding agents to drive. The rack in [Viewing a rack](#viewing-a-rack) was built from photos of a real case by a coding agent driving this CLI.
+Every command takes `--json`, which makes modulargrid easy to script and easy for agents to drive. See [Viewing a rack](#viewing-a-rack) for a full case that was built from photos.
 
 ## Table of contents
 
