@@ -65,9 +65,25 @@ Every command takes `--json`, which makes modulargrid easy to script and easy fo
 
 ## Installation
 
-### Via Cargo
+### Via Homebrew (macOS/Linux)
 
-From a checkout of this repository:
+```bash
+brew install andreasjansson/tap/modulargrid
+```
+
+### Pre-built binaries
+
+Download from the [releases page](https://github.com/andreasjansson/modulargrid-cli/releases). Binaries are available for:
+- Linux (x86_64, ARM64; glibc and musl)
+- macOS (Intel, Apple Silicon)
+
+### From source
+
+```bash
+cargo install --git https://github.com/andreasjansson/modulargrid-cli
+```
+
+Or from a checkout of this repository:
 
 ```bash
 cargo install --path .
