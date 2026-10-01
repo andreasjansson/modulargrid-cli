@@ -429,16 +429,29 @@ fn require_session(s: &Option<Session>) -> Result<()> {
     Ok(())
 }
 
-/// Save any cookies the server refreshed during this run.
-fn persist(client: &Client, session: Option<Session>) -> Result<()> {
-    if let Some(mut s) = session {
-        let cookies = client.cookies();
-        if !cookies.is_empty() {
-            s.cookies = cookies;
-            s.save()?;
-        }
+/// Save cookies the server refreshed during this run.
+///
+/// Only writes if the cookies actually changed, and only if the session on disk
+/// is still the one this command started with. Otherwise a command that was
+/// running while you logged in as another account (or logged out) would write
+/// the old session back when it finished, silently switching accounts.
+fn persist(client: &Client, loaded: Option<Session>) -> Result<()> {
+    let Some(loaded) = loaded else {
+        return Ok(());
+    };
+    let cookies = client.cookies();
+    if cookies.is_empty() || Session::same_cookies(&loaded.cookies, &cookies) {
+        return Ok(());
     }
-    Ok(())
+    if Session::load()?.as_ref() != Some(&loaded) {
+        debug(format_args!(
+            "session changed on disk while this command ran; not saving its cookies"
+        ));
+        return Ok(());
+    }
+    let mut s = loaded;
+    s.cookies = cookies;
+    s.save()
 }
 
 fn login(args: LoginArgs, format: &str, json: bool) -> Result<()> {
